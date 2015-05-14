@@ -23,8 +23,9 @@ const (
 )
 
 type connCallbacks struct {
-	onMessage chan<- string
-	onClose   chan<- bool
+	onMessage    chan<- string
+	onClose      chan<- bool
+	onDisconnect chan bool
 }
 
 // Connection responsibilities:
@@ -43,6 +44,7 @@ type connection struct {
 	_onMessage   chan string
 	_onPingPong  chan bool
 	_onClose     chan error
+	ws           *websocket.Conn
 }
 
 func dial(c ClientConfig, conf *connCallbacks) (conn *connection, err error) {
@@ -55,6 +57,8 @@ func dial(c ClientConfig, conf *connCallbacks) (conn *connection, err error) {
 
 	url := baseURL + "?" + params.Encode()
 
+	ws, _, err := websocket.DefaultDialer.Dial(url, nil)
+
 	conn = &connection{
 		inactivityTimeout: defaultInactivityTimeout,
 		config:            conf,
@@ -62,10 +66,10 @@ func dial(c ClientConfig, conf *connCallbacks) (conn *connection, err error) {
 		_onMessage:        make(chan string),
 		_onPingPong:       make(chan bool),
 		_onClose:          make(chan error),
+		ws:                ws,
 	}
 
 	// TODO: Is this blocking as it connects?
-	ws, _, err := websocket.DefaultDialer.Dial(url, nil)
 
 	if err == nil {
 		ws.SetPingHandler(func(msg string) error {
@@ -80,8 +84,8 @@ func dial(c ClientConfig, conf *connCallbacks) (conn *connection, err error) {
 			return nil
 		})
 
-		go conn.readLoop(ws)
-		go conn.runLoop(ws)
+		go conn.readLoop()
+		go conn.runLoop()
 	}
 
 	return
@@ -91,21 +95,29 @@ func (self *connection) send(message []byte) {
 	self._sendMessage <- message
 }
 
-func (self *connection) readLoop(ws *websocket.Conn) {
+func (self *connection) readLoop() {
+	ws := self.ws
 	for {
+
 		if _, msg, err := ws.ReadMessage(); err == nil {
 			self._onMessage <- string(msg)
 		} else {
 			// TODO: Read the close code
-			log.Print("Closed: ", err)
 
-			self._onClose <- err
+			if err.Error() == "EOF" {
+				log.Print("Disconnected")
+			} else {
+				log.Print("Closed: ", err)
+				self._onClose <- err
+			}
+
 			return
 		}
+
 	}
 }
 
-func (self *connection) runLoop(ws *websocket.Conn) {
+func (self *connection) runLoop() {
 	pingTimer := time.NewTimer(self.inactivityTimeout)
 	awaitingPong := false
 
@@ -113,6 +125,8 @@ func (self *connection) runLoop(ws *websocket.Conn) {
 		pingTimer.Reset(self.inactivityTimeout)
 		awaitingPong = false
 	}
+
+	ws := self.ws
 
 	for {
 		select {
@@ -134,6 +148,12 @@ func (self *connection) runLoop(ws *websocket.Conn) {
 				self.config.onClose <- true
 			}
 			return
+
+		case <-self.config.onDisconnect:
+			ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(writeWait))
+			log.Print("Disconnecting...")
+			return
+
 		case msg := <-self._onMessage:
 			afterActivity()
 
