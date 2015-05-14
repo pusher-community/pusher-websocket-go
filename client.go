@@ -30,6 +30,7 @@ type Client struct {
 	// Internal channels
 	_subscribe   chan string
 	_unsubscribe chan string
+	_disconnect  chan bool
 }
 
 type ClientConfig struct {
@@ -66,9 +67,14 @@ func NewWithConfig(c ClientConfig) *Client {
 		bindings:     make(chanbindings),
 		_subscribe:   make(chan string),
 		_unsubscribe: make(chan string),
+		_disconnect:  make(chan bool),
 	}
 	go client.runLoop()
 	return client
+}
+
+func (self *Client) Disconnect() {
+	self._disconnect <- true
 }
 
 // Subscribe subscribes the client to the channel
@@ -97,9 +103,11 @@ func (self *Client) runLoop() {
 
 	onMessage := make(chan string)
 	onClose := make(chan bool)
+	onDisconnect := make(chan bool)
 	callbacks := &connCallbacks{
-		onMessage: onMessage,
-		onClose:   onClose,
+		onMessage:    onMessage,
+		onClose:      onClose,
+		onDisconnect: onDisconnect,
 	}
 
 	// Connect when this timer fires - initially fire immediately
@@ -134,6 +142,9 @@ func (self *Client) runLoop() {
 				unsubscribe(connection, c)
 			}
 
+		case <-self._disconnect:
+			onDisconnect <- true
+
 		case message := <-onMessage:
 			event, _ := decode([]byte(message))
 			log.Printf("Received: channel=%v event=%v", event.Channel, event.Name)
@@ -148,6 +159,7 @@ func (self *Client) runLoop() {
 			log.Print("Connection closed, will reconnect in 1s")
 			connection = nil
 			connectTimer.Reset(1 * time.Second)
+
 		}
 	}
 }
