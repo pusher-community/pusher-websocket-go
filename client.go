@@ -101,7 +101,7 @@ func (self *Client) Subscribe(channel string) (ch *Channel) {
 			return ch
 		}
 	}
-	ch = &Channel{Name: channel, connection: self.connection}
+	ch = &Channel{Name: channel, connection: self.connection, bindings: &self.bindings}
 	self._subscribe <- ch
 	return
 }
@@ -109,15 +109,6 @@ func (self *Client) Subscribe(channel string) (ch *Channel) {
 // UnSubscribe unsubscribes the client from the channel
 func (self *Client) Unsubscribe(channel string) {
 	self._unsubscribe <- channel
-}
-
-func (self *Client) OnChannelEventMessage(channelName, eventName string, c chan string) {
-	// Register callback function
-	if self.bindings[channelName] == nil {
-		self.bindings[channelName] = make(map[string]chan (string))
-	}
-
-	self.bindings[channelName][eventName] = c
 }
 
 func (self *Client) runLoop() {
@@ -189,11 +180,11 @@ func (self *Client) runLoop() {
 						ch.Subscribed = true
 					}
 				}
-			}
-
-			if self.bindings[event.Channel] != nil {
-				if self.bindings[event.Channel][event.Name] != nil {
-					self.bindings[event.Channel][event.Name] <- event.Data
+			default:
+				if self.bindings[event.Channel] != nil {
+					if self.bindings[event.Channel][event.Name] != nil {
+						self.bindings[event.Channel][event.Name] <- event.Data
+					}
 				}
 			}
 
@@ -253,8 +244,6 @@ func (self *Client) subscribe(channel *Channel) {
 		authString := createAuthString(self.Key, self.ClientConfig.Secret, stringToSign)
 		payload["auth"] = authString
 	}
-
-	log.Printf("%+v\n", payload)
 
 	message, _ := encode("pusher:subscribe", payload, nil)
 	self.connection.send(message)
