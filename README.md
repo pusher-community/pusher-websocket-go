@@ -1,5 +1,5 @@
-pusher-go-client
-================
+pusher-websocket-go
+===================
 
 Go client (WebSocket) library for Pusher.
 
