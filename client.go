@@ -34,7 +34,7 @@ type Client struct {
 
 	bindings chanbindings
 
-	connection *connection
+	*connection
 
 	// Internal channels
 	_subscribe   chan *Channel
@@ -94,14 +94,16 @@ func (self *Client) Disconnect() {
 }
 
 // Subscribe subscribes the client to the channel
-func (self *Client) Subscribe(channel string) {
+func (self *Client) Subscribe(channel string) (ch *Channel) {
 	for _, ch := range self.Channels {
 		if ch.Name == channel {
 			self._subscribe <- ch
-			return
+			return ch
 		}
 	}
-	self._subscribe <- &Channel{Name: channel}
+	ch = &Channel{Name: channel, connection: self.connection}
+	self._subscribe <- ch
+	return
 }
 
 // UnSubscribe unsubscribes the client from the channel
@@ -207,11 +209,18 @@ func (self *Client) runLoop() {
 	}
 }
 
-func encode(event string, data interface{}) (message []byte, err error) {
-	message, err = json.Marshal(map[string]interface{}{
+func encode(event string, data interface{}, channel *string) (message []byte, err error) {
+
+	payload := map[string]interface{}{
 		"event": event,
 		"data":  data,
-	})
+	}
+
+	if channel != nil {
+		payload["channel"] = channel
+	}
+
+	message, err = json.Marshal(payload)
 	return
 }
 
@@ -247,14 +256,14 @@ func (self *Client) subscribe(channel *Channel) {
 
 	log.Printf("%+v\n", payload)
 
-	message, _ := encode("pusher:subscribe", payload)
+	message, _ := encode("pusher:subscribe", payload, nil)
 	self.connection.send(message)
 }
 
 func (self *Client) unsubscribe(channel *Channel) {
 	message, _ := encode("pusher:unsubscribe", map[string]string{
 		"channel": channel.Name,
-	})
+	}, nil)
 	self.connection.send(message)
 	channel.Subscribed = false
 }
