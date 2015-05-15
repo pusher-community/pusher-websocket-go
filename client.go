@@ -17,6 +17,11 @@ const (
 	defaultPort   = "443"
 )
 
+type UserData struct {
+	UserId   string            `json:"user_id"`
+	UserInfo map[string]string `json:"user_info",omitempty`
+}
+
 // Client responsibilities:
 //
 // * Connecting (via Connection)
@@ -35,6 +40,7 @@ type Client struct {
 	_disconnect  chan bool
 	Connected    bool
 	Channels     []*Channel
+	UserData
 }
 
 type ClientConfig struct {
@@ -220,14 +226,31 @@ func isPrivateChannel(name string) bool {
 	return s.HasPrefix(name, "private-")
 }
 
+func isPresenceChannel(name string) bool {
+	return s.HasPrefix(name, "presence-")
+}
+
 func (self *Client) subscribe(conn *connection, channel *Channel) {
 	log.Println(channel.Name)
 	payload := map[string]string{
 		"channel": channel.Name,
 	}
 
-	if isPrivateChannel(channel.Name) {
-		stringToSign := s.Join([]string{conn.socketID, channel.Name}, ":")
+	isPrivate := isPrivateChannel(channel.Name)
+	isPresence := isPresenceChannel(channel.Name)
+
+	if isPrivate || isPresence {
+		stringToSign := (s.Join([]string{conn.socketID, channel.Name}, ":"))
+		if isPresence {
+			var _userData []byte
+			_userData, err := json.Marshal(self.UserData)
+			if err != nil {
+				panic(err)
+			}
+			userData := string(_userData)
+			payload["channel_data"] = userData
+			stringToSign = s.Join([]string{stringToSign, userData}, ":")
+		}
 		log.Printf("stringToSign: %s", stringToSign)
 		authString := createAuthString(self.Key, self.ClientConfig.Secret, stringToSign)
 		payload["auth"] = authString
