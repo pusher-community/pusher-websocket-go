@@ -33,7 +33,6 @@ type Client struct {
 	_subscribe   chan *Channel
 	_unsubscribe chan string
 	_disconnect  chan bool
-	_connected   chan bool
 	Connected    bool
 	Channels     []*Channel
 }
@@ -75,7 +74,6 @@ func NewWithConfig(c ClientConfig) *Client {
 		_subscribe:   make(chan *Channel),
 		_unsubscribe: make(chan string),
 		_disconnect:  make(chan bool),
-		_connected:   make(chan bool),
 		Channels:     make([]*Channel, 0),
 	}
 	go client.runLoop()
