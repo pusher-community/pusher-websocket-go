@@ -34,6 +34,8 @@ type Client struct {
 
 	bindings chanbindings
 
+	connection *connection
+
 	// Internal channels
 	_subscribe   chan *Channel
 	_unsubscribe chan string
@@ -81,6 +83,7 @@ func NewWithConfig(c ClientConfig) *Client {
 		_unsubscribe: make(chan string),
 		_disconnect:  make(chan bool),
 		Channels:     make([]*Channel, 0),
+		connection:   &connection{},
 	}
 	go client.runLoop()
 	return client
@@ -116,10 +119,6 @@ func (self *Client) OnChannelEventMessage(channelName, eventName string, c chan 
 }
 
 func (self *Client) runLoop() {
-	// Run loop state
-	// channels := make([]Channel)
-
-	var connection *connection
 
 	onMessage := make(chan string)
 	onClose := make(chan bool)
@@ -142,14 +141,13 @@ func (self *Client) runLoop() {
 				connectTimer.Reset(1 * time.Second)
 			} else {
 				log.Print("Connection opened")
-				connection = c
-
+				self.connection = c
 			}
 
 		case c := <-self._subscribe:
 
 			if self.Connected {
-				self.subscribe(connection, c)
+				self.subscribe(c)
 			}
 
 			self.Channels = append(self.Channels, c)
@@ -157,8 +155,8 @@ func (self *Client) runLoop() {
 		case c := <-self._unsubscribe:
 			for _, ch := range self.Channels {
 				if ch.Name == c {
-					if connection != nil {
-						self.unsubscribe(connection, ch)
+					if self.connection != nil {
+						self.unsubscribe(ch)
 					}
 				}
 			}
@@ -175,11 +173,11 @@ func (self *Client) runLoop() {
 				connectionEstablishedData := make(map[string]string)
 				json.Unmarshal([]byte(event.Data), &connectionEstablishedData)
 				log.Printf("%+v\n", connectionEstablishedData)
-				connection.socketID = connectionEstablishedData["socket_id"]
+				self.connection.socketID = connectionEstablishedData["socket_id"]
 				self.Connected = true
 				for _, ch := range self.Channels {
 					if !ch.Subscribed {
-						self.subscribe(connection, ch)
+						self.subscribe(ch)
 					}
 				}
 
@@ -202,7 +200,7 @@ func (self *Client) runLoop() {
 			for _, ch := range self.Channels {
 				ch.Subscribed = false
 			}
-			connection = nil
+			self.connection = nil
 			connectTimer.Reset(1 * time.Second)
 
 		}
@@ -222,25 +220,16 @@ func decode(message []byte) (event Event, err error) {
 	return
 }
 
-func isPrivateChannel(name string) bool {
-	return s.HasPrefix(name, "private-")
-}
-
-func isPresenceChannel(name string) bool {
-	return s.HasPrefix(name, "presence-")
-}
-
-func (self *Client) subscribe(conn *connection, channel *Channel) {
-	log.Println(channel.Name)
+func (self *Client) subscribe(channel *Channel) {
 	payload := map[string]string{
 		"channel": channel.Name,
 	}
 
-	isPrivate := isPrivateChannel(channel.Name)
-	isPresence := isPresenceChannel(channel.Name)
+	isPrivate := channel.isPrivate()
+	isPresence := channel.isPresence()
 
 	if isPrivate || isPresence {
-		stringToSign := (s.Join([]string{conn.socketID, channel.Name}, ":"))
+		stringToSign := (s.Join([]string{self.connection.socketID, channel.Name}, ":"))
 		if isPresence {
 			var _userData []byte
 			_userData, err := json.Marshal(self.UserData)
@@ -259,13 +248,13 @@ func (self *Client) subscribe(conn *connection, channel *Channel) {
 	log.Printf("%+v\n", payload)
 
 	message, _ := encode("pusher:subscribe", payload)
-	conn.send(message)
+	self.connection.send(message)
 }
 
-func (self *Client) unsubscribe(conn *connection, channel *Channel) {
+func (self *Client) unsubscribe(channel *Channel) {
 	message, _ := encode("pusher:unsubscribe", map[string]string{
 		"channel": channel.Name,
 	})
-	conn.send(message)
+	self.connection.send(message)
 	channel.Subscribed = false
 }
