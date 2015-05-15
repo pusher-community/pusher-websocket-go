@@ -182,9 +182,11 @@ func (self *Client) runLoop() {
 				}
 
 			case "pusher_internal:member_added":
-				self.triggerEventCallback(event.Channel, "pusher:member_added", event.Data)
+				member, _ := unmarshalledMember(event.Data)
+				self.triggerEventCallback(event.Channel, "pusher:member_added", member)
 			case "pusher_internal:member_removed":
-				self.triggerEventCallback(event.Channel, "pusher:member_removed", event.Data)
+				member, _ := unmarshalledMember(event.Data)
+				self.triggerEventCallback(event.Channel, "pusher:member_removed", member)
 			default:
 				self.triggerEventCallback(event.Channel, event.Name, event.Data)
 			}

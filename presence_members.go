@@ -25,6 +25,11 @@ type Member struct {
 	UserInfo map[string]string `json:"user_info,omitempty"`
 }
 
+func unmarshalledMember(data string) (member *Member, err error) {
+	err = json.Unmarshal([]byte(data), &member)
+	return
+}
+
 func unmarshalledMembers(data string, myID string) (members *Members, err error) {
 
 	var rawData rawMembers
