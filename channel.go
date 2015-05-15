@@ -8,7 +8,10 @@ type Channel struct {
 	Subscribed bool
 	Name       string
 	*connection
+	bindings *chanbindings
 }
+
+type EventHandler func(data string)
 
 func (self *Channel) isPrivate() bool {
 	return s.HasPrefix(self.Name, "private-")
@@ -21,11 +24,28 @@ func (self *Channel) isPresence() bool {
 func (self *Channel) Trigger(event string, data interface{}) {
 	payload, err := encode(event, data, &self.Name)
 
-	log.Println(string(payload))
-
 	if err != nil {
 		panic(err)
 	}
 
 	self.connection.send(payload)
+}
+
+func (self *Channel) Bind(event string, callback EventHandler) {
+	bindings := *self.bindings
+	if bindings[self.Name] == nil {
+		bindings[self.Name] = make(map[string]chan (string))
+	}
+
+	channelEvents := make(chan string)
+
+	bindings[self.Name][event] = channelEvents
+
+	go func() {
+		for {
+			data := <-channelEvents
+			callback(data)
+		}
+	}()
+
 }
