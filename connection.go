@@ -1,6 +1,7 @@
 package pusher
 
 import (
+	// "fmt"
 	"github.com/gorilla/websocket"
 	"log"
 	"net/url"
@@ -9,7 +10,7 @@ import (
 
 const (
 	pusherProtocol = "7"
-	clientName     = "pusher-go"
+	clientName     = "pusher-websocket-go"
 	clientVersion  = "0.0.1"
 
 	// Same as defined in websocket
@@ -45,6 +46,8 @@ type connection struct {
 	_onPingPong  chan bool
 	_onClose     chan error
 	ws           *websocket.Conn
+	socketID     string
+	connected    bool
 }
 
 func dial(c ClientConfig, conf *connCallbacks) (conn *connection, err error) {
@@ -164,6 +167,7 @@ func (self *connection) runLoop() {
 			afterActivity()
 
 		case msg := <-self._sendMessage:
+
 			log.Print("Sending: ", string(msg))
 			err := ws.WriteMessage(websocket.TextMessage, msg)
 
