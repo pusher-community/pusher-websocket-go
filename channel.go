@@ -11,7 +11,7 @@ type Channel struct {
 	bindings *chanbindings
 }
 
-type EventHandler func(data string)
+type EventHandler func(data interface{})
 
 func (self *Channel) isPrivate() bool {
 	return s.HasPrefix(self.Name, "private-")
@@ -34,10 +34,10 @@ func (self *Channel) Trigger(event string, data interface{}) {
 func (self *Channel) Bind(event string, callback EventHandler) {
 	bindings := *self.bindings
 	if bindings[self.Name] == nil {
-		bindings[self.Name] = make(map[string]chan (string))
+		bindings[self.Name] = make(map[string]chan (interface{}))
 	}
 
-	channelEvents := make(chan string)
+	channelEvents := make(chan interface{})
 
 	bindings[self.Name][event] = channelEvents
 

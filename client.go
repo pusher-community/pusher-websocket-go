@@ -17,11 +17,6 @@ const (
 	defaultPort   = "443"
 )
 
-type UserData struct {
-	UserId   string            `json:"user_id"`
-	UserInfo map[string]string `json:"user_info",omitempty`
-}
-
 // Client responsibilities:
 //
 // * Connecting (via Connection)
@@ -42,7 +37,7 @@ type Client struct {
 	_disconnect  chan bool
 	Connected    bool
 	Channels     []*Channel
-	UserData
+	UserData     Member
 }
 
 type ClientConfig struct {
@@ -60,7 +55,7 @@ type Event struct {
 	Data    string `json:"data"`
 }
 
-type evBind map[string]chan (string)
+type evBind map[string]chan (interface{})
 type chanbindings map[string]evBind
 
 // New creates a new Pusher client with given Pusher application key
@@ -178,14 +173,22 @@ func (self *Client) runLoop() {
 				for _, ch := range self.Channels {
 					if ch.Name == event.Channel {
 						ch.Subscribed = true
+						if ch.isPresence() {
+							members, _ := unmarshalledMembers(event.Data, self.UserData.UserId)
+							self.triggerEventCallback(event.Channel, "pusher:subscription_succeeded", members)
+						}
+
 					}
 				}
+
+			case "pusher_internal:member_added":
+				member, _ := unmarshalledMember(event.Data)
+				self.triggerEventCallback(event.Channel, "pusher:member_added", member)
+			case "pusher_internal:member_removed":
+				member, _ := unmarshalledMember(event.Data)
+				self.triggerEventCallback(event.Channel, "pusher:member_removed", member)
 			default:
-				if self.bindings[event.Channel] != nil {
-					if self.bindings[event.Channel][event.Name] != nil {
-						self.bindings[event.Channel][event.Name] <- event.Data
-					}
-				}
+				self.triggerEventCallback(event.Channel, event.Name, event.Data)
 			}
 
 		case <-onClose:
@@ -196,6 +199,14 @@ func (self *Client) runLoop() {
 			self.connection = nil
 			connectTimer.Reset(1 * time.Second)
 
+		}
+	}
+}
+
+func (self *Client) triggerEventCallback(channel, event string, data interface{}) {
+	if self.bindings[channel] != nil {
+		if binding := self.bindings[channel][event]; binding != nil {
+			binding <- data
 		}
 	}
 }
