@@ -183,6 +183,13 @@ func (self *Client) runLoop() {
 						self.subscribe(connection, ch)
 					}
 				}
+
+			case "pusher_internal:subscription_succeeded":
+				for _, ch := range self.Channels {
+					if ch.Name == event.Channel {
+						ch.Subscribed = true
+					}
+				}
 			}
 
 			if self.bindings[event.Channel] != nil {
@@ -234,7 +241,6 @@ func (self *Client) subscribe(conn *connection, channel *Channel) {
 
 	message, _ := encode("pusher:subscribe", payload)
 	conn.send(message)
-	channel.Subscribed = true
 }
 
 func (self *Client) unsubscribe(conn *connection, channel *Channel) {
