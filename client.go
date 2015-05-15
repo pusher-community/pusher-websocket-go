@@ -4,7 +4,9 @@ package pusher
 
 import (
 	"encoding/json"
+	// "fmt"
 	"log"
+	s "strings"
 	"time"
 )
 
@@ -28,16 +30,20 @@ type Client struct {
 	bindings chanbindings
 
 	// Internal channels
-	_subscribe   chan string
+	_subscribe   chan *Channel
 	_unsubscribe chan string
 	_disconnect  chan bool
+	Connected    bool
+	Channels     []*Channel
 }
 
 type ClientConfig struct {
-	Scheme string
-	Host   string
-	Port   string
-	Key    string
+	Scheme       string
+	Host         string
+	Port         string
+	Key          string
+	Secret       string
+	AuthEndpoint string
 }
 
 type Event struct {
@@ -65,9 +71,10 @@ func NewWithConfig(c ClientConfig) *Client {
 	client := &Client{
 		ClientConfig: c,
 		bindings:     make(chanbindings),
-		_subscribe:   make(chan string),
+		_subscribe:   make(chan *Channel),
 		_unsubscribe: make(chan string),
 		_disconnect:  make(chan bool),
+		Channels:     make([]*Channel, 0),
 	}
 	go client.runLoop()
 	return client
@@ -79,7 +86,13 @@ func (self *Client) Disconnect() {
 
 // Subscribe subscribes the client to the channel
 func (self *Client) Subscribe(channel string) {
-	self._subscribe <- channel
+	for _, ch := range self.Channels {
+		if ch.Name == channel {
+			self._subscribe <- ch
+			return
+		}
+	}
+	self._subscribe <- &Channel{Name: channel}
 }
 
 // UnSubscribe unsubscribes the client from the channel
@@ -98,7 +111,8 @@ func (self *Client) OnChannelEventMessage(channelName, eventName string, c chan 
 
 func (self *Client) runLoop() {
 	// Run loop state
-	channels := make(map[string]bool)
+	// channels := make([]Channel)
+
 	var connection *connection
 
 	onMessage := make(chan string)
@@ -124,22 +138,23 @@ func (self *Client) runLoop() {
 				log.Print("Connection opened")
 				connection = c
 
-				// Subscribe to all channels
-				for ch, _ := range channels {
-					subscribe(connection, ch)
-				}
 			}
 
 		case c := <-self._subscribe:
-			channels[c] = true
-			if connection != nil {
-				subscribe(connection, c)
+
+			if self.Connected {
+				self.subscribe(connection, c)
 			}
 
+			self.Channels = append(self.Channels, c)
+
 		case c := <-self._unsubscribe:
-			delete(channels, c)
-			if connection != nil {
-				unsubscribe(connection, c)
+			for _, ch := range self.Channels {
+				if ch.Name == c {
+					if connection != nil {
+						self.unsubscribe(connection, ch)
+					}
+				}
 			}
 
 		case <-self._disconnect:
@@ -147,7 +162,28 @@ func (self *Client) runLoop() {
 
 		case message := <-onMessage:
 			event, _ := decode([]byte(message))
-			log.Printf("Received: channel=%v event=%v", event.Channel, event.Name)
+			log.Printf("Received: channel=%v event=%v data=%v", event.Channel, event.Name, event.Data)
+
+			switch event.Name {
+			case "pusher:connection_established":
+				connectionEstablishedData := make(map[string]string)
+				json.Unmarshal([]byte(event.Data), &connectionEstablishedData)
+				log.Printf("%+v\n", connectionEstablishedData)
+				connection.socketID = connectionEstablishedData["socket_id"]
+				self.Connected = true
+				for _, ch := range self.Channels {
+					if !ch.Subscribed {
+						self.subscribe(connection, ch)
+					}
+				}
+
+			case "pusher_internal:subscription_succeeded":
+				for _, ch := range self.Channels {
+					if ch.Name == event.Channel {
+						ch.Subscribed = true
+					}
+				}
+			}
 
 			if self.bindings[event.Channel] != nil {
 				if self.bindings[event.Channel][event.Name] != nil {
@@ -157,6 +193,9 @@ func (self *Client) runLoop() {
 
 		case <-onClose:
 			log.Print("Connection closed, will reconnect in 1s")
+			for _, ch := range self.Channels {
+				ch.Subscribed = false
+			}
 			connection = nil
 			connectTimer.Reset(1 * time.Second)
 
@@ -177,16 +216,33 @@ func decode(message []byte) (event Event, err error) {
 	return
 }
 
-func subscribe(conn *connection, channel string) {
-	message, _ := encode("pusher:subscribe", map[string]string{
-		"channel": channel,
-	})
+func isPrivateChannel(name string) bool {
+	return s.HasPrefix(name, "private-")
+}
+
+func (self *Client) subscribe(conn *connection, channel *Channel) {
+	log.Println(channel.Name)
+	payload := map[string]string{
+		"channel": channel.Name,
+	}
+
+	if isPrivateChannel(channel.Name) {
+		stringToSign := s.Join([]string{conn.socketID, channel.Name}, ":")
+		log.Printf("stringToSign: %s", stringToSign)
+		authString := createAuthString(self.Key, self.ClientConfig.Secret, stringToSign)
+		payload["auth"] = authString
+	}
+
+	log.Printf("%+v\n", payload)
+
+	message, _ := encode("pusher:subscribe", payload)
 	conn.send(message)
 }
 
-func unsubscribe(conn *connection, channel string) {
+func (self *Client) unsubscribe(conn *connection, channel *Channel) {
 	message, _ := encode("pusher:unsubscribe", map[string]string{
-		"channel": channel,
+		"channel": channel.Name,
 	})
 	conn.send(message)
+	channel.Subscribed = false
 }
