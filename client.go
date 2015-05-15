@@ -140,10 +140,6 @@ func (self *Client) runLoop() {
 				log.Print("Connection opened")
 				connection = c
 
-				// for _, channel := range self.Channels {
-				// 	self.subscribe(connection, channel)
-				// }
-
 			}
 
 		case c := <-self._subscribe:
@@ -157,7 +153,6 @@ func (self *Client) runLoop() {
 		case c := <-self._unsubscribe:
 			for _, ch := range self.Channels {
 				if ch.Name == c {
-					ch.Subscribed = false
 					if connection != nil {
 						self.unsubscribe(connection, ch)
 					}
@@ -200,6 +195,9 @@ func (self *Client) runLoop() {
 
 		case <-onClose:
 			log.Print("Connection closed, will reconnect in 1s")
+			for _, ch := range self.Channels {
+				ch.Subscribed = false
+			}
 			connection = nil
 			connectTimer.Reset(1 * time.Second)
 
@@ -248,4 +246,5 @@ func (self *Client) unsubscribe(conn *connection, channel *Channel) {
 		"channel": channel.Name,
 	})
 	conn.send(message)
+	channel.Subscribed = false
 }
