@@ -4,7 +4,6 @@ package pusher
 
 import (
 	"encoding/json"
-	// "fmt"
 	"log"
 	s "strings"
 	"time"
@@ -78,7 +77,6 @@ func NewWithConfig(c ClientConfig) *Client {
 		_unsubscribe: make(chan string),
 		_disconnect:  make(chan bool),
 		Channels:     make([]*Channel, 0),
-		connection:   &connection{},
 	}
 	go client.runLoop()
 	return client
@@ -96,7 +94,7 @@ func (self *Client) Subscribe(channel string) (ch *Channel) {
 			return ch
 		}
 	}
-	ch = &Channel{Name: channel, connection: self.connection, bindings: &self.bindings}
+	ch = &Channel{Name: channel, bindings: &self.bindings}
 	self._subscribe <- ch
 	return
 }
@@ -160,7 +158,6 @@ func (self *Client) runLoop() {
 			case "pusher:connection_established":
 				connectionEstablishedData := make(map[string]string)
 				json.Unmarshal([]byte(event.Data), &connectionEstablishedData)
-				log.Printf("%+v\n", connectionEstablishedData)
 				self.connection.socketID = connectionEstablishedData["socket_id"]
 				self.Connected = true
 				for _, ch := range self.Channels {
@@ -173,6 +170,7 @@ func (self *Client) runLoop() {
 				for _, ch := range self.Channels {
 					if ch.Name == event.Channel {
 						ch.Subscribed = true
+						ch.connection = self.connection
 						if ch.isPresence() {
 							members, _ := unmarshalledMembers(event.Data, self.UserData.UserId)
 							self.triggerEventCallback(event.Channel, "pusher:subscription_succeeded", members)
@@ -251,7 +249,6 @@ func (self *Client) subscribe(channel *Channel) {
 			payload["channel_data"] = userData
 			stringToSign = s.Join([]string{stringToSign, userData}, ":")
 		}
-		log.Printf("stringToSign: %s", stringToSign)
 		authString := createAuthString(self.Key, self.ClientConfig.Secret, stringToSign)
 		payload["auth"] = authString
 	}
