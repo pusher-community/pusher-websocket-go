@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+var Debug = false
+
 const (
 	pusherProtocol = "7"
 	clientName     = "pusher-websocket-go"
@@ -108,9 +110,13 @@ func (self *connection) readLoop() {
 			// TODO: Read the close code
 
 			if err.Error() == "EOF" {
-				log.Print("Disconnected")
+				if Debug {
+					log.Print("Disconnected")
+				}
 			} else {
-				log.Print("Closed: ", err)
+				if Debug {
+					log.Print("Closed: ", err)
+				}
 				self._onClose <- err
 			}
 
@@ -135,14 +141,18 @@ func (self *connection) runLoop() {
 		select {
 		case <-pingTimer.C:
 			if awaitingPong == false {
-				log.Printf("No activity in %v, sending ping", self.inactivityTimeout)
+				if Debug {
+					log.Printf("No activity in %v, sending ping", self.inactivityTimeout)
+				}
 				ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(writeWait))
 
 				// Wait a further pong timeout
 				pingTimer.Reset(pongTimeout)
 				awaitingPong = true
 			} else {
-				log.Print("Closing after non-receipt of pong")
+				if Debug {
+					log.Print("Closing after non-receipt of pong")
+				}
 				ws.Close()
 			}
 
@@ -154,7 +164,9 @@ func (self *connection) runLoop() {
 
 		case <-self.config.onDisconnect:
 			ws.WriteControl(websocket.CloseMessage, nil, time.Now().Add(writeWait))
-			log.Print("Disconnecting...")
+			if Debug {
+				log.Print("Disconnecting...")
+			}
 			return
 
 		case msg := <-self._onMessage:
@@ -167,12 +179,15 @@ func (self *connection) runLoop() {
 			afterActivity()
 
 		case msg := <-self._sendMessage:
-
-			log.Print("Sending: ", string(msg))
+			if Debug {
+				log.Print("Sending: ", string(msg))
+			}
 			err := ws.WriteMessage(websocket.TextMessage, msg)
 
 			if err != nil {
-				log.Print("Error sending: ", err)
+				if Debug {
+					log.Print("Error sending: ", err)
+				}
 			}
 		}
 	}

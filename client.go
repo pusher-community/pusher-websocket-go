@@ -37,6 +37,7 @@ type Client struct {
 	Connected    bool
 	Channels     []*Channel
 	UserData     Member
+	Debug        bool
 }
 
 type ClientConfig struct {
@@ -123,10 +124,14 @@ func (self *Client) runLoop() {
 		case <-connectTimer.C:
 			// Connect to Pusher
 			if c, err := dial(self.ClientConfig, callbacks); err != nil {
-				log.Print("Failed to connect: ", err)
+				if Debug {
+					log.Print("Failed to connect: ", err)
+				}
 				connectTimer.Reset(1 * time.Second)
 			} else {
-				log.Print("Connection opened")
+				if Debug {
+					log.Print("Connection opened")
+				}
 				self.connection = c
 			}
 
@@ -152,7 +157,9 @@ func (self *Client) runLoop() {
 
 		case message := <-onMessage:
 			event, _ := decode([]byte(message))
-			log.Printf("Received: channel=%v event=%v data=%v", event.Channel, event.Name, event.Data)
+			if Debug {
+				log.Printf("Received: channel=%v event=%v data=%v", event.Channel, event.Name, event.Data)
+			}
 
 			switch event.Name {
 			case "pusher:connection_established":
@@ -190,7 +197,9 @@ func (self *Client) runLoop() {
 			}
 
 		case <-onClose:
-			log.Print("Connection closed, will reconnect in 1s")
+			if Debug {
+				log.Print("Connection closed, will reconnect in 1s")
+			}
 			for _, ch := range self.Channels {
 				ch.Subscribed = false
 			}
