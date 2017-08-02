@@ -152,9 +152,6 @@ func (self *Client) runLoop() {
 				}
 			}
 
-		case <-self._disconnect:
-			onDisconnect <- true
-
 		case message := <-onMessage:
 			event, _ := decode([]byte(message))
 			if Debug {
@@ -195,6 +192,17 @@ func (self *Client) runLoop() {
 			default:
 				self.triggerEventCallback(event.Channel, event.Name, event.Data)
 			}
+
+		case <-self._disconnect:
+			for _, ch := range self.Channels {
+				ch.Subscribed = false
+			}
+
+			self.connection.ws.Close()
+			self.connection = nil
+			connectTimer.Stop()
+			onDisconnect <- true
+			return
 
 		case <-onClose:
 			if Debug {
