@@ -27,6 +27,7 @@ type Client struct {
 	ClientConfig
 
 	bindings chanbindings
+	globalBindings map[*func(string, string, interface{})]struct{}
 
 	*connection
 
@@ -74,6 +75,7 @@ func NewWithConfig(c ClientConfig) *Client {
 	client := &Client{
 		ClientConfig: c,
 		bindings:     make(chanbindings),
+		globalBindings: map[*func(string, string, interface{})]struct{}{},
 		_subscribe:   make(chan *Channel),
 		_unsubscribe: make(chan string),
 		_disconnect:  make(chan bool),
@@ -224,6 +226,9 @@ func (self *Client) triggerEventCallback(channel, event string, data interface{}
 			binding <- data
 		}
 	}
+	for handler, _ := range self.globalBindings {
+		(*handler)(channel, event, data)
+	}
 }
 
 func encode(event string, data interface{}, channel *string) (message []byte, err error) {
@@ -280,4 +285,9 @@ func (self *Client) unsubscribe(channel *Channel) {
 	}, nil)
 	self.connection.send(message)
 	channel.Subscribed = false
+}
+
+
+func (self *Client) BindGlobal(callback func(string, string, interface{})) {
+	self.globalBindings[&callback] = struct{}{}
 }

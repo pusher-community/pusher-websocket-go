@@ -25,6 +25,10 @@ To bind to events:
 channel.bind("my-event", func(data interface{}){
   fmt.Println(data)
 })
+
+client.bind(func (channel string, event string, data interface{}) {
+  fmt.Println(channel, event, data)
+})
 ```
 
 ## TODO
